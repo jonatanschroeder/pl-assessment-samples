@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import puppeteer from 'puppeteer';
+import { chromium } from 'playwright';
 import { promisify } from 'util';
 
 (async () => {
@@ -16,17 +16,20 @@ import { promisify } from 'util';
   const base_url = `https://${config.SERVER}/pl/course_instance/${config.COURSE_INSTANCE_ID}`;
   const assessments_ignore = new RegExp(config.ASSESSMENTS_IGNORE);
 
-  const browser = await puppeteer.launch({ headless: 'new' });
-  const page = await browser.newPage();
+  const browser = await chromium.launch();
+  const browserContext = await browser.newContext();
+  const page = await browserContext.newPage();
 
-  await page.goto(base_url, { waitUntil: 'networkidle0' });
-  await page.setCookie({
-    name: 'pl_authn',
-    value: config.AUTHN_TOKEN,
-  });
-  await page.goto(`${base_url}/instructor/instance_admin/assessments`, {
-    waitUntil: 'networkidle0',
-  });
+  await page.goto(base_url);
+  await browserContext.addCookies([
+    {
+      name: 'pl_authn',
+      value: config.AUTHN_TOKEN,
+      domain: config.SERVER,
+      path: '/',
+    },
+  ]);
+  await page.goto(`${base_url}/instructor/instance_admin/assessments`);
 
   const blank_directory = path.join('results', 'blank');
 
@@ -38,14 +41,13 @@ import { promisify } from 'util';
     printBackground: true,
   });
 
-  const urls = await page.$$eval(
-    `a[href^="/pl/course_instance/${config.COURSE_INSTANCE_ID}/instructor/assessment"][role="button"]`,
-    (links: HTMLAnchorElement[]) =>
-      links.map((link) => ({
-        href: link.href,
-        name: link.textContent?.trim(),
-      })),
-  );
+  const urls = await page
+    .locator(
+      `a[href^="/pl/course_instance/${config.COURSE_INSTANCE_ID}/instructor/assessment"][role="button"]`,
+    )
+    .evaluateAll((links: HTMLAnchorElement[]) =>
+      links.map((link) => ({ href: link.href, name: link.textContent?.trim() })),
+    );
 
   for (const assessment of urls) {
     if (assessment.name.match(assessments_ignore)) continue;
@@ -53,15 +55,15 @@ import { promisify } from 'util';
     const assessment_dir = path.join(blank_directory, assessment.name);
     if (!fs.existsSync(assessment_dir)) fs.mkdirSync(assessment_dir);
 
-    await page.goto(assessment.href, { waitUntil: 'networkidle0' });
+    await page.goto(assessment.href);
     await page.pdf({
       path: path.join(assessment_dir, 'overview.pdf'),
       printBackground: true,
     });
 
-    const questions = await page.$$eval(
-      `a[href^="/pl/course_instance/${config.COURSE_INSTANCE_ID}/instructor/question"]`,
-      (links: HTMLAnchorElement[]) =>
+    const questions = await page
+      .locator(`a[href^="/pl/course_instance/${config.COURSE_INSTANCE_ID}/instructor/question"]`)
+      .evaluateAll((links: HTMLAnchorElement[]) =>
         links.map((link) => ({
           href: link.href,
           name:
@@ -71,22 +73,19 @@ import { promisify } from 'util';
               .split(' ')[0]
               .replace(/[^a-zA-Z0-9]+$/, ''),
         })),
-    );
+      );
 
     for (const question of questions) {
       console.log('-- ', question.name);
 
-      await page.goto(question.href, { waitUntil: 'networkidle0' });
+      await page.goto(question.href);
       await page.pdf({
         path: path.join(assessment_dir, `${question.name}.pdf`),
         printBackground: true,
       });
 
-      const nav = page.waitForNavigation({ waitUntil: 'networkidle0' });
-      await page.click('button[value="save"]');
-      await nav;
-
-      await page.click('div.submission-header .expand-icon-container');
+      await page.locator('button[value="save"]').click();
+      await page.locator('div.submission-header .expand-icon-container').click();
 
       await page.pdf({
         path: path.join(assessment_dir, `${question.name}-solution.pdf`),
@@ -95,27 +94,32 @@ import { promisify } from 'util';
     }
   }
 
-  console.log(config.STUDENT_UID);
   for (const uid_key in config.STUDENT_UID) {
     const uid = config.STUDENT_UID[uid_key];
 
     console.log(`*** STUDENT: ${uid} (${uid_key})`);
 
-    await page.setCookie(
+    await browserContext.addCookies([
       {
         name: 'pl_requested_course_instance_role',
         value: 'Student%20Data%20Viewer',
+        domain: config.SERVER,
+        path: '/',
       },
       {
         name: 'pl_requested_course_role',
         value: 'Owner',
+        domain: config.SERVER,
+        path: '/',
       },
       {
         name: 'pl_requested_uid',
         value: uid,
+        domain: config.SERVER,
+        path: '/',
       },
-    );
-    await page.goto(`${base_url}/assessments`, { waitUntil: 'networkidle0' });
+    ]);
+    await page.goto(`${base_url}/assessments`);
 
     const user_directory = path.join('results', uid_key);
     if (!fs.existsSync(user_directory)) fs.mkdirSync(user_directory);
@@ -125,14 +129,16 @@ import { promisify } from 'util';
       printBackground: true,
     });
 
-    const urls = await page.$$eval(
-      `a[href^="/pl/course_instance/${config.COURSE_INSTANCE_ID}/assessment_instance"][data-testid="assessment-set-badge"]`,
-      (links) =>
+    const urls = await page
+      .locator(
+        `a[href^="/pl/course_instance/${config.COURSE_INSTANCE_ID}/assessment_instance"][data-testid="assessment-set-badge"]`,
+      )
+      .evaluateAll((links: HTMLAnchorElement[]) =>
         links.map((link) => ({
           href: link.href,
           name: link.textContent.trim(),
         })),
-    );
+      );
 
     for (const ai of urls) {
       if (ai.name.match(assessments_ignore)) continue;
@@ -140,20 +146,20 @@ import { promisify } from 'util';
       const ai_dir = path.join(user_directory, ai.name);
       if (!fs.existsSync(ai_dir)) fs.mkdirSync(ai_dir);
 
-      await page.goto(ai.href, { waitUntil: 'networkidle0' });
+      await page.goto(ai.href);
       await page.pdf({
         path: path.join(ai_dir, 'overview.pdf'),
         printBackground: true,
       });
 
-      const questions = await page.$$eval(
-        `a[href^="/pl/course_instance/${config.COURSE_INSTANCE_ID}/instance_question"]`,
-        (links) =>
+      const questions = await page
+        .locator(`a[href^="/pl/course_instance/${config.COURSE_INSTANCE_ID}/instance_question"]`)
+        .evaluateAll((links: HTMLAnchorElement[]) =>
           links.map((link) => ({
             href: link.href,
             name: link.textContent.trim(),
           })),
-      );
+        );
 
       for (const iq of questions) {
         const q_name = iq.name.startsWith('Question ')
@@ -161,16 +167,17 @@ import { promisify } from 'util';
           : iq.name.split(' ')[0].replace(/[.]+$/, '');
         console.log('-- ', q_name);
 
-        await page.goto(iq.href, { waitUntil: 'networkidle0' });
+        await page.goto(iq.href);
         await page.pdf({
           path: path.join(ai_dir, `${q_name}.pdf`),
           printBackground: true,
         });
 
-        const downloads = await page.$$eval(
-          '.question-body .file-upload-status a[download]',
-          (files) => files.map((file) => ({ filename: file.download, href: file.href })),
-        );
+        const downloads = await page
+          .locator('.question-body .file-upload-status a[download]')
+          .evaluateAll((files: HTMLAnchorElement[]) =>
+            files.map((file) => ({ filename: file.download, href: file.href })),
+          );
         for (const file of downloads) {
           //const data = await (await fetch(file.href)).blob();
           fs.writeFileSync(
