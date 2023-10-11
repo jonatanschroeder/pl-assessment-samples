@@ -1,10 +1,10 @@
-const puppeteer = require('puppeteer');
-const path = require('path');
-const fs = require('fs');
-const { promisify } = require('util');
+import * as path from 'path';
+import * as fs from 'fs';
+import puppeteer from 'puppeteer';
+import { promisify } from 'util';
 
 (async () => {
-  const config_file = fs.readFileSync('config.json');
+  const config_file = await promisify(fs.readFile)('config.json', { encoding: 'utf-8' });
   const config: {
     AUTHN_TOKEN: string; // Copy this from browser
     SERVER: string;
