@@ -1,0 +1,6 @@
+config.json
+results/**
+*~
+.dir-locals.el
+node_modules/**
+yarn-error.log

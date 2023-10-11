@@ -1,0 +1,23 @@
+{
+  "name": "assessment_download",
+  "version": "1.0.0",
+  "description": "Downloads assessments for a student in PrairieLearn",
+  "main": "index.js",
+  "scripts": {
+    "start": "ts-node src/index.ts",
+    "build": "babel src -d dist",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Jonatan Schroeder",
+  "license": "MIT",
+  "dependencies": {
+    "@types/node": "^20.8.4",
+    "async": "^3.2.4",
+    "puppeteer": "^21.3.8",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.2.2"
+  },
+  "devDependencies": {
+    "babel-cli": "^6.26.0"
+  }
+}
